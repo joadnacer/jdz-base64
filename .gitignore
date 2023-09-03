@@ -1,0 +1,4 @@
+*/target
+*.flattened-pom.xml
+*.jar
+.vscode
