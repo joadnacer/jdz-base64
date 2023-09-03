@@ -1,11 +1,15 @@
-This library contains Base64 encoders and decoders implemented using the incubator Vector API, as well as (slower) scalar implementations. This is the fastest Java-written Base64 library, with both the vector-based and scalar methods outperforming any other Java written library. These methods are faster than intrisified java.util for RFC2045/MIME encoding/decoding, but slower for RFC4648 (see "java.util Intrisification" and "Benchmark" sections). Requires Java 16 or higher.
+This library contains Base64 encoders and decoders implemented using the incubator Vector API, as well as (slower) scalar implementations. This is the fastest Java-written Base64 library, with both the vector-based and scalar methods outperforming any other Java written library. These methods are faster than intrinsified java.util for RFC2045/MIME encoding/decoding, but slower for RFC4648 (see "java.util Intrinsification" and "Benchmark" sections). Requires Java 16 or higher.
 
 The encoding and decoding methods used for the Vector implementation, which can be found in VectorUtils.java, were heavily inspired by Wojciech Mula's articles, available here:
+
 http://0x80.pl/notesen/2016-01-12-sse-base64-encoding.html
+
 http://0x80.pl/notesen/2016-01-17-sse-base64-decoding.html
 
 # Usage
 As the Vector API is currently an incubator project, you will need to add the flag `--add-modules jdk.incubator.vector` to your java run command in order to use this library's vector methods.
+
+This library will be hosted on the central Maven repository once the Vector API is officially released. In the meanwhile this may only be used via local installation.
 
 ## Decoder/Encoder Instantiation
 For convenience, statically instantiated encoders/decoders can be accessed via the Base64Vector and Base64Scalar classes. You may also instantiate the indidual encoders/decoders yourself.
@@ -22,32 +26,32 @@ Java should select the optimal vector size thanks to the use of the Vector API's
 
 The automated vector length selection can be overriden with the `jdz.vector.size` system property, which may be set to values 128, 256 or 512, representing the vector bit size. Selecting a value greater than what your CPU supports will make encoding/decoding 100-1000x slower. Experiment with this value if the library appears suspiciously slow.
 
-# java.util Intrisification
+# java.util Intrinsification
 
-The java.util `encode` and `decode` methods rely on the use of an `encodeBlock` and `decodeBlock` method. These methods are both intrisinc candidates since Java 11 and 16 respectively, meaning that the JVM can replace them with [an extremely fast SIMD method](https://github.com/openjdk/jdk/blob/a59c9b2ac277d6ff6be1700d91ff389f137e61ca/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp#L6063). From my testing, these methods get intrisifed after around 5000 calls in a JMH benchmark. So how many bytes need to be decoded in order to hit 5000 calls to these methods?
+The java.util `encode` and `decode` methods rely on the use of an `encodeBlock` and `decodeBlock` method. These methods are both intrinsinc candidates since Java 11 and 16 respectively, meaning that the JVM can replace them with [an extremely fast SIMD method](https://github.com/openjdk/jdk/blob/a59c9b2ac277d6ff6be1700d91ff389f137e61ca/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp#L6063). From my testing, these methods get intrinsifed after around 5000 calls in a JMH benchmark. So how many bytes need to be decoded in order to hit 5000 calls to these methods?
 
-If you're encoding or decoding according the RFC4648/RFC4648_URL spec, the intrinsic methods get called once for each call to `encode` or `decode`, which obviously allows for the fastest speeds as this minimizes callbacks into Java. Unfortunately, this means that the high level methods must be called ~5000 times before users benefit from intrinsification (*). If you are working with large arrays, this can take a while: 33 seconds of continuous encoding of 10MB arrays were required for the java.util encoding to intrisify on my M1 mac. Similarly, if your application does not encode/decode 5000+ times in its lifetime, you will never benefit from this. If your application is encoding/decoding base64 sparsely rather than continuously, this might also impede intrisification.
+If you're encoding or decoding according the RFC4648/RFC4648_URL spec, the intrinsic methods get called once for each call to `encode` or `decode`, which obviously allows for the fastest speeds as this minimizes callbacks into Java. Unfortunately, this means that the high level methods must be called ~5000 times before users benefit from intrinsification (*). If you are working with large arrays, this can take a while: 33 seconds of continuous encoding of 10MB arrays were required for the java.util encoding to intrinsify on my M1 mac. Similarly, if your application does not encode/decode 5000+ times in its lifetime, you will never benefit from this. If your application is encoding/decoding base64 sparsely rather than continuously, this might also impede intrinsification.
 
-The java.util RFC2045 methods are more consistent in their intrisification and unaffected by input size. The encoding method will encode data in 76 byte blocks, before return to Java to write linebreak characters, while the decoding method will return to Java on each invalid base64 character (which includes linebreak characters every 76 bytes). Although this guarantees faster intrisification due to the IntrinsicCandidate methods being called at least once per 76 bytes of input, this slows down the methods considerably, allowing the jdz vector implementation to be faster.
+The java.util RFC2045 methods are more consistent in their intrinsification and unaffected by input size. The encoding method will encode data in 76 byte blocks, before return to Java to write linebreak characters, while the decoding method will return to Java on each invalid base64 character (which includes linebreak characters every 76 bytes). Although this guarantees faster intrinsification due to the IntrinsicCandidate methods being called at least once per 76 bytes of input, this slows down the methods considerably, allowing the jdz vector implementation to be faster.
 
-Intrisification also does not necessarily occur on every system or JVM. For example, the java.util methods were not intrisified on an AWS m4.large or on my VMWare Ubuntu VM. As a result, jdz methods strongly outperform java.util on any such system, as java.util will be performing scalar encoding/decoding.
+Intrinsification also does not necessarily occur on every system or JVM. For example, the java.util methods were not intrinsified on an AWS m4.large or on my VMWare Ubuntu VM. As a result, jdz methods strongly outperform java.util on any such system, as java.util will be performing scalar encoding/decoding.
 
 # Benchmarks
 Benchmarks were all ran on Java 20 (Temurin), using non byte array allocating methods for all libraries supporting this. These are JMH benchmarks consisting of 3 forks of 5 warmups and 5 iterations. All benchmarks were measured for size of unencoded data, input size for encoding and output size for decoding.
 
 The overall theme in these benchmarks is that it is hard to predict relative performance of jdz vs java.util across different architectures. If your application is dependent on efficient base64 encoding, make sure to test your system yourself to determine what is fastest.
 
-jdz scalar methods are generally the best performing scalar methods for both specs and all architectures - however, these were mostly implemented for reference, and are only worth using over the vector/java.util methods if your cpu does not support 128+ bit vector sizes/does not intrisify java.util.
+jdz scalar methods are generally the best performing scalar methods for both specs and all architectures - however, these were mostly implemented for reference, and are only worth using over the vector/java.util methods if your cpu does not support 128+ bit vector sizes/does not intrinsify java.util.
 
-As a quick summary, the following table presents the generally fastest library for each spec/method combo. The overall benchmarks assume that java.util is intrisified - if this is not the case, the jdz vector methods will always be fastest.
+As a quick summary, the following table presents the generally fastest library for each spec/method combo. The overall benchmarks assume that java.util is intrinsified - if this is not the case, the jdz vector methods will always be fastest.
 
-| Spec/Method | Overall Encoding  | Scalar Encoding | Overall Decoding  | Scalar Decoding | Overall Fast Decoding | Scalar Fast Decoding |
-|-------------|-----------|-----------------|-----------|-----------------|---------------|----------------------|
-| RFC4648     | java.util | jdz             | java.util | jdz             | java.util     | jdz                  |
-| RFC2045     | jdz vector/java.util | jdz             | jdz vector | jdz/java.util   | jdz vector | jdz                  |
+| Spec/Method | Overall Encoding     | Overall Fast Decoding | Overall Decoding | Scalar Encoding | Scalar Decoding | Scalar Fast Decoding |
+|-------------|----------------------|-----------------------|------------------|-----------------|-----------------|----------------------|
+| RFC4648     | java.util            | java.util             | java.util        | jdz scalar      | jdz scalar      | jdz scalar           |
+| RFC2045     | jdz vector/java.util | jdz vector            | jdz vector       | jdz scalar      | jdz scalar/java.util | jdz scalar           |
 
 ## Throughput
-These benchmarks represent MB/s throughput of encoding/decoding methods given 1MB inputs.
+These benchmarks represent MB/s throughput of encoding/decoding methods given 1MB inputs. java.util scalar throughput was meansured by disabling intrinsification.
 
 ### RFC4648
 #### RFC4648 Encoding
@@ -140,7 +144,7 @@ The following benchmarks measure the time per operation to encode/decode a certa
 | migBase64 decode      | 30ns | 157ns | 1472ns | 1554µs | 15673µs | 171.8ms |
 | migBase64 decodeFast  | 28ns | 104ns | 955ns  | 894µs  | 9000µs  | 98.96ms |
 
-As only 5 warmups were performed, we can see java.util methods cease to be intrisified for 10MB+ data (see "java.util Intrisification").
+As only 5 warmups were performed, we can see java.util methods cease to be intrinsified for 10MB+ data (see "java.util Intrinsification").
 
 ### RFC2045 (MIME)
 
